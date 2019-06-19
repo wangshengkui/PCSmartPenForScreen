@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.logging.MemoryHandler;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -30,6 +31,7 @@ import org.apache.http.impl.client.DefaultHttpClient;
 
 import com.example.smartpengesture.DealSmartPenGesture;
 import com.example.smartpengesture.SmartPenGesture;
+import com.google.common.base.CaseFormat;
 import com.google.common.collect.BiMap;
 import com.tqltech.tqlpencomm.Dot;
 import com.tqltech.tqlpencomm.Dot.DotType;
@@ -57,6 +59,7 @@ import android.graphics.Matrix;
 import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.media.MediaPlayer;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -260,7 +263,7 @@ public class MainActivity extends Activity {
     
     
     
-	private Context mContext;
+	private static Context mContext;
 	private static final int REQUEST_SELECT_DEVICE = 1; // 蓝牙扫描
 	private BluetoothLEService mService = null; // 蓝牙服务
 	private PenCommAgent bleManager;
@@ -320,6 +323,8 @@ public class MainActivity extends Activity {
 	protected volatile long curTime;
 	protected volatile long curTimedown=0;//wsk 5.30
 	protected volatile long curTimeup=0;//wsk 5.30
+	protected volatile long soundStartTime=0;//wsk 6.19
+	protected volatile long curSoundTime=0;//wsk 6.19
 	protected volatile long speed1;//wsk 5.30
     private float speedtime;//wsk 5.30
     private	volatile long upfisrttime=0;//wsk 5.30
@@ -351,6 +356,14 @@ public class MainActivity extends Activity {
 	private float upspeed   ;//df 5.20
 	private int Processtime;//df5.20
 	private int PenMoveSize=0;
+	
+	//wsk 2019.6.19
+	private static MediaRecorder mAudioRecorder;
+	private static String recorderPath = null;
+	private static boolean isRecording = false;
+	public String penAddress;
+	boolean RadioIsPlaying = false;
+	
 //	private Dot dotContainer;
 //	BlockingQueue<Dot> queue = new LinkedBlockingQueue<Dot>();
 	public Handler mHandler=new Handler() {
@@ -367,7 +380,12 @@ public class MainActivity extends Activity {
 				Toast.makeText(mContext, "没有检测到分享来的图片", Toast.LENGTH_SHORT).show();
 			}
 			break;
-		
+		case 2:
+			Toast.makeText(mContext, "开始录音", Toast.LENGTH_SHORT).show();
+			break;
+		case 3:
+			Toast.makeText(mContext, "录音结束", Toast.LENGTH_SHORT).show();
+			break;
 		}	
 			
 			
@@ -375,7 +393,7 @@ public class MainActivity extends Activity {
 	};
 	
 	//wsk 2019.5.30
-public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws InterruptedException {
+    public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws InterruptedException {
 		
 		
 		if(dot.type==DotType.PEN_UP||dot.type==DotType.PEN_DOWN||dot.type==DotType.PEN_MOVE)
@@ -455,13 +473,6 @@ public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws 
 
 				@Override
 				public void onDataReceive(final Dot dot) {
-/*					try {
-						queue.put(dot);
-						Log.e("zgm", "加入点了");
-					} catch (InterruptedException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}*/
 					runOnUiThread(new Runnable() {
 
 						@Override
@@ -471,52 +482,58 @@ public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws 
 							//PC520 添加imageview纸型说明 papertype
 							case 0:
 //								Toast.makeText(getBaseContext(), "请选择书写幅面，现在为默认A4", Toast.LENGTH_SHORT).show();
-								processEachDot(dot);
 								papertype="A4";
+								processEachDot(dot);
+							
 								break;
 							case R.id.A4:
-								processEachDot(dot);
 								papertype="A4";
+								processEachDot(dot);
+								
 								break;
 							case R.id.A3:
-								processEachDot(dot);
 								papertype="A3";
+								processEachDot(dot);
+								
 								break;
 							case R.id.A4_16:
+								papertype="A4_16";
 								try {
 									Process16A4EachDot(dot);
 								} catch (InterruptedException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
 								}
-								papertype="A4_16";
 								break;
 							case R.id.a2_4:
+								papertype="A2_4";
 								try {
 									Process4A2EachDot(dot);
 								} catch (InterruptedException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
 								}
-								papertype="A2_4";
+								
 								break;
 							case R.id.a2_8:
+								papertype="A2_8";
 								try {
 									Process8A2EachDot(dot);
 								} catch (InterruptedException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
 								}
-								papertype="A2_8";
+								
 								break;
 							case R.id.a2_4_picture:
+								papertype="A2_4";
 								try {
 									Process4A2HavePictureEachDot(dot);
 								} catch (InterruptedException e) {
 									// TODO Auto-generated catch block
 									e.printStackTrace();
 								}
-								papertype="A2_4";
+								
 //								A24PoictureProcessEachDot(dot);
 								break;
 
@@ -767,6 +784,7 @@ public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws 
 		case REQUEST_SELECT_DEVICE:
 			if (resultCode == Activity.RESULT_OK && data != null) {
 				String deviceAddress = data.getStringExtra(BluetoothDevice.EXTRA_DEVICE);
+				penAddress = deviceAddress;
 				try {
 					boolean flag = mService.connect(deviceAddress);
 					if (flag) {
@@ -1440,11 +1458,7 @@ public void compensate(Float x,Float y,Dot dot,DrawView DV,int penWidth) throws 
 //				//downpic();
 			break;
 			case R.id.downpic:
-			//	setimg();
-            //merge();
-//			downpic();
-//			downpic2();
-//            Toast.makeText(MainActivity.this, "Downpicture Complete", Toast.LENGTH_LONG).show();
+			showSound(recorderPath);
 			break;
 
 			
@@ -1610,8 +1624,12 @@ public void accrodingDotTypeDrawChirography(float x,float y,Dot tempDot) {
 		return;
 	}
 	
+	
 	if (tempDot.force > 0) 
 	{
+		
+		
+		
 		
 		if (tempDot.type == Dot.DotType.PEN_DOWN) {
 			if (tempDot.PageID < 0 || tempDot.BookID< 0) {
@@ -1621,6 +1639,39 @@ public void accrodingDotTypeDrawChirography(float x,float y,Dot tempDot) {
 			drawType=0;
 			penIsUp=false;
 		
+			soundStartTime = System.currentTimeMillis();
+			if(isRecording==false)
+			{
+				new Thread(new Runnable() {
+					
+					@Override
+					public void run() {
+						// TODO Auto-generated method stub
+						//wsk 2019.6.19
+						//书写录音同步
+						
+						curSoundTime = System.currentTimeMillis();
+						//Date date = new Date(curSoundTime);
+						if(isRecording==false) 
+						{
+							recorderPath = "sdcard/-1/"+papertype+"-"+curSoundTime+".mp3";
+							startRecord(recorderPath);
+							isRecording=true;
+						}
+						else
+						{
+							while(curSoundTime-soundStartTime<500)
+							{
+								//录音
+								curSoundTime = System.currentTimeMillis();
+							}
+							stopRecording();
+							ReleaseRecord();
+						}
+					}
+				}).start();
+			}
+			
 			if (ismSmartPenStrokeBufferNeedClear) {
 //				penIsUp=false;
 				SmartPenStrokeBuffer.clear();
@@ -1682,7 +1733,7 @@ public void accrodingDotTypeDrawChirography(float x,float y,Dot tempDot) {
 				firstpen = false;
 				curTime = System.currentTimeMillis();
 //Log.e("di","1129:hah计时开始："+System.currentTimeMillis());				
-				while (curTime - penUpTime < 500) {
+				while (curTime - penUpTime < 2000) {
 				try {
 					Thread.sleep(500);
 				} catch (InterruptedException e) {
@@ -1692,6 +1743,8 @@ public void accrodingDotTypeDrawChirography(float x,float y,Dot tempDot) {
 					curTime = System.currentTimeMillis();
 				}
 				{
+					stopRecording();
+					ReleaseRecord();
 					firstpen = true;
 					firstPenChi = true;
 					penIsUp=true;
@@ -2012,7 +2065,79 @@ public  String getCurrentPageName(String path, int bookid,int pageid){
 	return fileName;
 
 }
+//录音到指定路径
+	private boolean startRecord(String r_path) {
 
+		mAudioRecorder = new MediaRecorder();
+		// 设置音频源
+		mAudioRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+		// 设置输出格式
+		mAudioRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
+		// 设置编码格式
+		mAudioRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+		// 设置文件输出路径
+		mAudioRecorder.setOutputFile(r_path);
+		try {
+			// 录音准备
+			Log.i("录音", "开始录音");
+			Message message = new Message();
+			message.what=2;
+			mHandler.sendMessage(message);
+			mAudioRecorder.prepare();
+			mAudioRecorder.start();
+		} catch (IllegalStateException e) {
+			// TODO Auto-generated catch block
+			Log.e("record", "recordException", e);
+			return false;
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			Log.e("record", "recordException", e);
+			return false;
+		}
 
+		isRecording = true;
 
+		Log.e("record", "set isRecording:" + isRecording);
+		return true;
+	}
+	
+	// 停止录音
+		private void stopRecording() {
+			Log.i("录音", "结束录音");
+			if (isRecording) {
+				Message message = new Message();
+				message.what=3;
+				mHandler.sendMessage(message);
+				mAudioRecorder.stop();
+				mAudioRecorder.reset();
+				isRecording = false;
+				Log.e("record", "set isRecording:" + isRecording);
+			}
+
+			// mAudioRecorder.release();
+		}
+		private void ReleaseRecord()
+		{
+			mAudioRecorder.release();
+			mAudioRecorder=null;
+		}
+		
+		public void showSound(String path)
+		{
+			if(path == null)return;
+				if (mediaPlayer != null && mediaPlayer.isPlaying()) 
+				{
+					mediaPlayer.stop();
+				}
+				mediaPlayer = new MediaPlayer();
+				try 
+				{
+					mediaPlayer.setDataSource(path);
+					mediaPlayer.prepare();
+
+				} catch (IOException e) {
+					Log.e("zgm", "prepare() failed");
+				}
+				mediaPlayer.start();
+		}
 }

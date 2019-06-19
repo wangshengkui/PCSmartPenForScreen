@@ -397,7 +397,7 @@ private void onRecord(boolean start) {
     if (start) {
 
 //        Toast.makeText(activity, "开始录音...", Toast.LENGTH_SHORT).show();
-        File folder = new File(Environment.getExternalStorageDirectory() + "/penconNativeRecord");
+        File folder = new File(Environment.getExternalStorageDirectory() + "/-1");
         if (!folder.exists()) {
             //folder /SoundRecorder doesn't exist, create the folder
             folder.mkdir();

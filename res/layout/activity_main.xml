@@ -94,7 +94,7 @@ android:orientation="horizontal">
         <Button 
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="downpic"
+        android:text="录音播放"
         android:id="@+id/downpic"
         android:onClick="buttonClick"/>
 </LinearLayout>
